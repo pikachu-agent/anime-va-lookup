@@ -39,7 +39,11 @@ endpoints) or Jikan (unreachable from this network).
 ## Operating Rules
 1. Default language is Japanese ("Always sub" user preference); only look up dub
    actors when the user explicitly asks for a dub.
-2. If the character search returns multiple candidates and no `--anime` hint was
+2. The answer must always include the VA's **MyAnimeList people link**
+   (user preference). Research may draw on any source — AniList, Wikipedia,
+   fandom wikis, whatever resolves the answer — but MAL is the required link
+   target. The script's `mal_url` field is the canonical way to get it.
+3. If the character search returns multiple candidates and no `--anime` hint was
    given, pass the anime title from the user's question as `--anime`.
 3. MAL links in the JSON are the answer's source links — verify each URL points
    at the claimed page before shipping it to the user.
