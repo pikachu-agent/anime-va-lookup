@@ -29,11 +29,16 @@ Output is JSON with stable `myanimelist.net` links:
       "notable_roles": [
         { "character": "Sukuna",
           "anime": "JUJUTSU KAISEN",
-          "anime_mal_url": "https://myanimelist.net/anime/40748" }
+          "anime_mal_url": "https://myanimelist.net/anime/40748",
+          "known_anime": true }
       ]
     }
   ]
 }
+```
+
+Roles from anime listed in the local `config.json` are flagged with
+`"known_anime": true` and sorted first; other notable roles follow.
 ```
 
 ## How it works
