@@ -49,8 +49,9 @@ endpoints) or Jikan (unreachable from this network).
    at the claimed page before shipping it to the user.
 4. Notable roles should cover anime beyond the user's known titles too, but a
    role from one of the user's known anime must always be included and called
-   out. The script reads `config.json` (local-only, never committed/pushed)
-   and marks matching roles with `"known_anime": true`, sorted first. If the
-   file is missing, check memory for the list.
+   out. The script reads `config.json` (local-only, never committed/pushed;
+   list order = priority, top first) and marks matching roles with
+   `"known_anime": true`, sorted by priority first. If the file is missing,
+   check memory for the list.
 5. If AniList 429s or MAL resolution fails, fall back to `browser.search` for the
    answer and say so — do not guess the VA.
