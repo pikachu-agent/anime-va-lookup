@@ -26,6 +26,7 @@ Design notes (see references/api_notes.md):
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -37,6 +38,17 @@ ANILIST = "https://graphql.anilist.co"
 MAL_SEARCH = "https://myanimelist.net/people.php"
 USER_AGENT = "anime-va-lookup/1.0 (Pika/Muse skill; contact: none)"
 LANG_CODES = {"japanese": "JAPANESE", "english": "ENGLISH"}
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
+
+
+def load_known_anime():
+    """Local-only user config (never committed). Returns lowercase title set."""
+    try:
+        with open(CONFIG_PATH, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return {t.lower() for t in data.get("known_anime", [])}
+    except (OSError, ValueError):
+        return set()
 
 
 def _http(req, data=None, _retries=2):
@@ -178,6 +190,9 @@ def notable_roles(staff_id, va_anilist_id, limit=8):
     sig = ", ".join(f"${a}: Int" for a in variables)
     batch = graphql("query (%s) { %s }" % (sig, " ".join(parts)), variables)
     roles = []
+    # Collect more than `limit` so the known-anime sort below has candidates;
+    # truncation to `limit` happens after sorting.
+    collect_cap = max(limit * 2, 12)
     for c in wanted:
         alias = next(a for a, cid in variables.items() if cid == c["id"])
         char = batch.get(alias)
@@ -196,9 +211,16 @@ def notable_roles(staff_id, va_anilist_id, limit=8):
                                   if node.get("idMal") else None),
             })
             break  # one anime per character
-        if len(roles) >= limit:
+        if len(roles) >= collect_cap:
             break
-    return roles, staff
+    # Flag roles from the user's known anime (config.json, local-only) and
+    # surface them first; the rest of the list still covers other titles.
+    # Sort known-first BEFORE truncating so a known-anime role never gets cut.
+    known = load_known_anime()
+    for r in roles:
+        r["known_anime"] = bool(known) and (r["anime"] or "").lower() in known
+    roles.sort(key=lambda r: (not r["known_anime"],))
+    return roles[:limit], staff
 
 
 def cmd_character(args):
