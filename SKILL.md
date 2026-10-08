@@ -48,7 +48,8 @@ endpoints) or Jikan (unreachable from this network).
 3. MAL links in the JSON are the answer's source links — verify each URL points
    at the claimed page before shipping it to the user.
 4. When naming the VA's notable roles in the answer, prefer roles from anime the
-   user knows: BNHA (My Hero Academia), JJK (Jujutsu Kaisen), Fire Force
-   (list may grow — check memory for additions).
+   user knows — read `config.json` for that list. `config.json` is local-only:
+   it must never be committed or pushed to the public repo (only
+   `config.example.json` is published). If the file is missing, check memory.
 5. If AniList 429s or MAL resolution fails, fall back to `browser.search` for the
    answer and say so — do not guess the VA.
