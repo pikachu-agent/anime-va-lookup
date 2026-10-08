@@ -47,5 +47,8 @@ endpoints) or Jikan (unreachable from this network).
    given, pass the anime title from the user's question as `--anime`.
 3. MAL links in the JSON are the answer's source links — verify each URL points
    at the claimed page before shipping it to the user.
-4. If AniList 429s or MAL resolution fails, fall back to `browser.search` for the
+4. When naming the VA's notable roles in the answer, prefer roles from anime the
+   user knows: BNHA (My Hero Academia), JJK (Jujutsu Kaisen), Fire Force
+   (list may grow — check memory for additions).
+5. If AniList 429s or MAL resolution fails, fall back to `browser.search` for the
    answer and say so — do not guess the VA.
