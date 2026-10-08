@@ -42,13 +42,29 @@ CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "co
 
 
 def load_known_anime():
-    """Local-only user config (never committed). Returns lowercase title set."""
+    """Local-only user config (never committed). Returns ordered title list."""
     try:
         with open(CONFIG_PATH, encoding="utf-8") as fh:
             data = json.load(fh)
-        return {t.lower() for t in data.get("known_anime", [])}
+        return [t for t in data.get("known_anime", []) if t]
     except (OSError, ValueError):
-        return set()
+        return []
+
+
+def known_rank(anime_titles, known):
+    """Priority rank of an anime in the user's list, or None.
+
+    Matches on either the English or romaji title, exact or substring, so
+    "Cherry Magic" matches "Cherry Magic! Thirty Years of Virginity...".
+    Lower rank = higher priority (list order).
+    """
+    titles = [t.lower() for t in anime_titles if t]
+    for i, k in enumerate(known):
+        k = k.lower()
+        for t in titles:
+            if k == t or k in t or t in k:
+                return i
+    return None
 
 
 def _http(req, data=None, _retries=2):
@@ -207,6 +223,7 @@ def notable_roles(staff_id, va_anilist_id, limit=8):
             roles.append({
                 "character": char["name"]["full"],
                 "anime": titles.get("english") or titles.get("romaji"),
+                "_romaji": titles.get("romaji"),
                 "anime_mal_url": (f"https://myanimelist.net/anime/{node['idMal']}"
                                   if node.get("idMal") else None),
             })
@@ -214,12 +231,18 @@ def notable_roles(staff_id, va_anilist_id, limit=8):
         if len(roles) >= collect_cap:
             break
     # Flag roles from the user's known anime (config.json, local-only) and
-    # surface them first; the rest of the list still covers other titles.
+    # surface them first, ordered by the list's priority (top of the list =
+    # highest). The rest of the list still covers other titles.
     # Sort known-first BEFORE truncating so a known-anime role never gets cut.
     known = load_known_anime()
     for r in roles:
-        r["known_anime"] = bool(known) and (r["anime"] or "").lower() in known
-    roles.sort(key=lambda r: (not r["known_anime"],))
+        rank = known_rank([r.get("anime"), r.get("_romaji")], known)
+        r["known_anime"] = rank is not None
+        r["_rank"] = rank if rank is not None else 0
+        del r["_romaji"]
+    roles.sort(key=lambda r: (not r["known_anime"], r["_rank"]))
+    for r in roles:
+        del r["_rank"]
     return roles[:limit], staff
 
 
