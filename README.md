@@ -52,3 +52,9 @@ MAL API v2 has no character/people endpoints at all, and Jikan (the ideal
 MAL-backed REST API) is unreachable from some networks, hence this combo.
 
 Built as a [Muse](https://muse.ai) skill (`SKILL.md`); also usable standalone.
+
+## Local config
+
+Copy `config.example.json` to `config.json` and list the anime the user knows
+well — the skill prefers those titles when summarizing notable roles.
+`config.json` is local-only and is never published to the repo.
