@@ -9,27 +9,27 @@ memory.
 
 ```bash
 # Who voices this character? (Japanese by default)
-python3 bin/va_lookup.py character "Gyari" --anime "Iruma-kun"
+python3 bin/va_lookup.py character "Baal" --anime "Iruma-kun"
 
 # Look up a voice actor directly
-python3 bin/va_lookup.py person "Misato Matsuoka" --roles 12
+python3 bin/va_lookup.py person "Junichi Suwabe" --roles 12
 ```
 
 Output is JSON with stable `myanimelist.net` links:
 
 ```json
 {
-  "character": "Gyari",
-  "character_kanji": "ギャリー",
+  "character": "Baal",
+  "character_kanji": "バール",
   "voice_actors": [
     {
-      "name": "Misato Matsuoka",
-      "name_kanji": "松岡美里",
-      "mal_url": "https://myanimelist.net/people/50192/Misato_Matsuoka",
+      "name": "Junichi Suwabe",
+      "name_kanji": "諏訪部順一",
+      "mal_url": "https://myanimelist.net/people/95/Junichi_Suwabe",
       "notable_roles": [
-        { "character": "Tsubame Mizusaki",
-          "anime": "Keep Your Hands Off Eizouken!",
-          "anime_mal_url": "https://myanimelist.net/anime/39792" }
+        { "character": "Sukuna",
+          "anime": "JUJUTSU KAISEN",
+          "anime_mal_url": "https://myanimelist.net/anime/40748" }
       ]
     }
   ]
