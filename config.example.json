@@ -1,1 +1,1 @@
-{"_comment":"Copy to config.json and list the anime the user knows well. config.json is local-only and must not be published.","known_anime":["Example Anime 1","Example Anime 2"]}
+{"_comment":"Copy to config.json and list the anime the user knows well, in priority order (top = highest). config.json is local-only and must not be published.","known_anime":["Example Anime 1","Example Anime 2"]}
