@@ -47,9 +47,10 @@ endpoints) or Jikan (unreachable from this network).
    given, pass the anime title from the user's question as `--anime`.
 3. MAL links in the JSON are the answer's source links — verify each URL points
    at the claimed page before shipping it to the user.
-4. When naming the VA's notable roles in the answer, prefer roles from anime the
-   user knows — read `config.json` for that list. `config.json` is local-only:
-   it must never be committed or pushed to the public repo (only
-   `config.example.json` is published). If the file is missing, check memory.
+4. Notable roles should cover anime beyond the user's known titles too, but a
+   role from one of the user's known anime must always be included and called
+   out. The script reads `config.json` (local-only, never committed/pushed)
+   and marks matching roles with `"known_anime": true`, sorted first. If the
+   file is missing, check memory for the list.
 5. If AniList 429s or MAL resolution fails, fall back to `browser.search` for the
    answer and say so — do not guess the VA.
