@@ -77,6 +77,11 @@ def _http(req, data=None, _retries=2):
             wait = int(e.headers.get("Retry-After", "10") or 10)
             time.sleep(wait)
             return _http(req, data, _retries - 1)
+        if e.code in (500, 502, 503) and _retries > 0:
+            # AniList occasionally 500s on complex queries; one retry is safe
+            # since all our requests are idempotent reads.
+            time.sleep(2)
+            return _http(req, data, _retries - 1)
         raise
 
 
@@ -267,11 +272,106 @@ def search_characters_paged(name, max_pages=3):
     return candidates
 
 
+ANIME_SEARCH = """
+query ($q: String) {
+  Page(perPage: 10) {
+    media(search: $q, type: ANIME) {
+      id idMal title { romaji english native }
+    }
+  }
+}
+"""
+
+ANIME_CAST = """
+query ($id: Int) {
+  Media(id: $id) {
+    id idMal title { romaji english native }
+    characters(sort: ROLE, perPage: 50) {
+      edges {
+        role
+        voiceActors(language: JAPANESE) { id name { full native } }
+        node { id name { full native } }
+      }
+    }
+  }
+}
+"""
+
+
+def find_anime(title):
+    """Search AniList for an anime; prefer an exact title match."""
+    results = graphql(ANIME_SEARCH, {"q": title})["Page"]["media"] or []
+    if not results:
+        return None
+    lowered = title.strip().lower()
+    for m in results:
+        titles = m.get("title") or {}
+        for key in ("romaji", "english", "native"):
+            if (titles.get(key) or "").lower() == lowered:
+                return m
+    return results[0]
+
+
+def anime_cast(media_id):
+    return graphql(ANIME_CAST, {"id": media_id})["Media"]
+
+
+def va_result(va, lang, roles_limit):
+    """Shared VA result shape: MAL link + notable roles."""
+    mal_url = mal_people_url(va["name"])
+    roles, _ = notable_roles(va["anilist_id"], va["anilist_id"], roles_limit)
+    return {
+        "name": va["name"],
+        "name_kanji": va["name_kanji"],
+        "language": lang,
+        "mal_url": mal_url,
+        "notable_roles": roles,
+    }
+
+
+def character_via_anime(anime_title, character_name, lang, roles_limit):
+    """Anime-first lookup: resolve the anime, scan its full cast for the
+    character. Catches characters the global character search misses
+    (e.g. Susanoo in Kusunoki's Garden of Gods, absent from AniList's
+    character index but present in the media's cast)."""
+    anime = find_anime(anime_title)
+    if not anime:
+        return None, None
+    cast = anime_cast(anime["id"])
+    lowered = character_name.strip().lower()
+    for edge in (cast.get("characters") or {}).get("edges", []):
+        node = edge.get("node") or {}
+        if (node.get("name", {}).get("full") or "").lower() != lowered:
+            continue
+        vas = [{
+            "anilist_id": v["id"],
+            "name": v["name"]["full"],
+            "name_kanji": v["name"].get("native"),
+        } for v in (edge.get("voiceActors") or [])]
+        titles = anime.get("title") or {}
+        return {
+            "character": node["name"]["full"],
+            "character_kanji": node["name"].get("native"),
+            "anime": titles.get("english") or titles.get("romaji"),
+            "anime_mal_url": (f"https://myanimelist.net/anime/{anime['idMal']}"
+                              if anime.get("idMal") else None),
+            "voice_actors": [va_result(va, lang, roles_limit) for va in vas],
+        }, anime
+    return None, anime
+
+
 def cmd_character(args):
     lang = LANG_CODES.get(args.lang.lower(), "JAPANESE")
     candidates = search_characters_paged(args.name)
     char = pick_character(args.name, candidates, args.anime)
     if not char:
+        # Anime-first fallback: scan the anime's full cast. Catches characters
+        # missing from AniList's character search index.
+        if args.anime:
+            result, _ = character_via_anime(args.anime, args.name, args.lang, args.roles)
+            if result:
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+                return 0
         hint = f" in {args.anime!r}" if args.anime else ""
         print(json.dumps({"error": f"no character {args.name!r}{hint} found"}))
         return 1
@@ -281,15 +381,44 @@ def cmd_character(args):
         "voice_actors": [],
     }
     for va in vas_for_character(char, lang):
-        mal_url = mal_people_url(va["name"])
-        roles, _ = notable_roles(va["anilist_id"], va["anilist_id"], args.roles)
-        result["voice_actors"].append({
-            "name": va["name"],
-            "name_kanji": va["name_kanji"],
-            "language": args.lang,
-            "mal_url": mal_url,
-            "notable_roles": roles,
-        })
+        result["voice_actors"].append(va_result(va, args.lang, args.roles))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_anime(args):
+    lang = LANG_CODES.get(args.lang.lower(), "JAPANESE")
+    anime = find_anime(args.name)
+    if not anime:
+        print(json.dumps({"error": f"no anime found for {args.name!r}"}))
+        return 1
+    cast = anime_cast(anime["id"])
+    titles = (cast.get("title") or {})
+    result = {
+        "anime": titles.get("english") or titles.get("romaji"),
+        "anime_mal_url": (f"https://myanimelist.net/anime/{cast['idMal']}"
+                          if cast.get("idMal") else None),
+        "characters": [],
+    }
+    for edge in (cast.get("characters") or {}).get("edges", []):
+        node = edge.get("node") or {}
+        if args.character and (node.get("name", {}).get("full") or "").lower() != args.character.strip().lower():
+            continue
+        if args.role and (edge.get("role") or "").upper() != args.role.upper():
+            continue
+        entry = {
+            "character": node["name"]["full"],
+            "character_kanji": node["name"].get("native"),
+            "role": edge.get("role"),
+            "voice_actors": [],
+        }
+        for v in (edge.get("voiceActors") or []):
+            va = {"anilist_id": v["id"], "name": v["name"]["full"],
+                  "name_kanji": v["name"].get("native")}
+            entry["voice_actors"].append(va_result(va, args.lang, args.roles))
+        result["characters"].append(entry)
+        if len(result["characters"]) >= args.limit:
+            break
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
@@ -338,9 +467,20 @@ def main(argv=None):
     p.add_argument("name")
     p.add_argument("--roles", type=int, default=12)
 
+    a = sub.add_parser("anime", help="list an anime's cast and their voice actors")
+    a.add_argument("name")
+    a.add_argument("--character", help="only this character from the cast")
+    a.add_argument("--role", choices=["MAIN", "SUPPORTING", "BACKGROUND"],
+                   help="only characters with this role type")
+    a.add_argument("--lang", default="Japanese")
+    a.add_argument("--roles", type=int, default=5, help="notable roles to include per VA")
+    a.add_argument("--limit", type=int, default=20, help="max characters to list")
+
     args = ap.parse_args(argv)
     if args.mode == "character":
         return cmd_character(args)
+    if args.mode == "anime":
+        return cmd_anime(args)
     return cmd_person(args)
 
 
