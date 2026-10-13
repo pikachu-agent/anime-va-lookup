@@ -93,8 +93,9 @@ def graphql(query, variables):
 
 
 CHAR_SEARCH = """
-query ($q: String) {
-  Page(perPage: 10) {
+query ($q: String, $page: Int) {
+  Page(page: $page, perPage: 10) {
+    pageInfo { hasNextPage }
     characters(search: $q) {
       id
       name { full native }
@@ -254,10 +255,22 @@ def notable_roles(staff_id, va_anilist_id, limit=8):
     return roles[:limit], staff
 
 
+def search_characters_paged(name, max_pages=3):
+    """Character search with pagination (AniList search returns 10/page)."""
+    candidates = []
+    for page in range(1, max_pages + 1):
+        data = graphql(CHAR_SEARCH, {"q": name, "page": page})
+        page_data = data["Page"]
+        candidates.extend(page_data["characters"])
+        if not page_data["pageInfo"]["hasNextPage"]:
+            break
+    return candidates
+
+
 def cmd_character(args):
     lang = LANG_CODES.get(args.lang.lower(), "JAPANESE")
-    data = graphql(CHAR_SEARCH, {"q": args.name})
-    char = pick_character(args.name, data["Page"]["characters"], args.anime)
+    candidates = search_characters_paged(args.name)
+    char = pick_character(args.name, candidates, args.anime)
     if not char:
         hint = f" in {args.anime!r}" if args.anime else ""
         print(json.dumps({"error": f"no character {args.name!r}{hint} found"}))
