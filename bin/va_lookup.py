@@ -161,6 +161,13 @@ def mal_people_url(name):
 
 
 def pick_character(name, candidates, anime_hint=None):
+    """Deterministic pick: exact name match first, then anime hint.
+
+    If an anime hint is given but no candidate appears in that anime, return
+    None instead of falling back to favourites — a wrong-anime match is worse
+    than no match (it once returned Akame ga Kill!'s Susanoo for a Kusunoki
+    question).
+    """
     if not candidates:
         return None
     lowered = name.strip().lower()
@@ -175,6 +182,7 @@ def pick_character(name, candidates, anime_hint=None):
                 blob = " ".join(str(titles.get(k) or "") for k in ("romaji", "english", "native"))
                 if hint in blob.lower():
                     return c
+        return None
     return max(pool, key=lambda c: c.get("favourites") or 0)
 
 
@@ -251,7 +259,8 @@ def cmd_character(args):
     data = graphql(CHAR_SEARCH, {"q": args.name})
     char = pick_character(args.name, data["Page"]["characters"], args.anime)
     if not char:
-        print(json.dumps({"error": f"no character found for {args.name!r}"}))
+        hint = f" in {args.anime!r}" if args.anime else ""
+        print(json.dumps({"error": f"no character {args.name!r}{hint} found"}))
         return 1
     result = {
         "character": char["name"]["full"],
