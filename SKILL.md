@@ -21,9 +21,17 @@ so answers come from a real API instead of model memory.
   matches; otherwise the first search result is parsed).
 
 - Character mode: `bin/va_lookup.py character "Gyari" [--anime "Iruma-kun"] [--lang Japanese] [--roles 8]`
-  - Searches AniList characters, picks the exact name match (or uses `--anime`
-    to disambiguate), reads the Japanese voiceActors edges, attaches each VA's
-    notable roles + MAL people link.
+  - Searches AniList characters (paginated, up to 3 pages), picks the exact name
+    match (or uses `--anime` to disambiguate), reads the Japanese voiceActors
+    edges, attaches each VA's notable roles + MAL people link.
+  - If `--anime` is given but the character search finds no match in that
+    anime, it falls back to an anime-first scan of the full cast before
+    giving up — this catches characters missing from AniList's character
+    search index. It never falls back to a different anime's character.
+- Anime mode: `bin/va_lookup.py anime "Kusunoki's Garden of Gods" [--character "Tsumugi"] [--role MAIN|SUPPORTING|BACKGROUND] [--limit 20]`
+  - Resolves the anime, then lists its cast (role-sorted) with Japanese VAs,
+    MAL people links, and notable roles. Use when the user asks about a
+    show's cast, or when character mode can't find someone.
 - Person mode: `bin/va_lookup.py person "Misato Matsuoka" [--roles 12]`
   - Searches AniList staff, returns top roles by favourites with MAL anime links.
 
