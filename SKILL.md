@@ -11,11 +11,19 @@ Deterministic character → voice actor → notable-roles lookups backed by MAL 
 so answers come from a real API instead of model memory.
 
 ## Tooling
-`bin/va_lookup.py` (Python 3 stdlib only, no deps). Two data sources, no API keys:
+`bin/va_lookup.py` (Python 3 stdlib only, no deps). Three data sources, no API keys:
 
-- **AniList GraphQL** (`https://graphql.anilist.co`) — the VA data source:
-  character search with per-media `voiceActors(language: JAPANESE)` edges, and
-  Staff queries for notable roles (matched by AniList id, `idMal` for anime links).
+- **AniList GraphQL** (`https://graphql.anilist.co`) — the primary VA data source:
+  character search (paginated) with per-media `voiceActors(language: JAPANESE)`
+  edges, and Staff queries for notable roles (matched by AniList id, `idMal`
+  for anime links).
+- **MyAnimeList HTML** (`myanimelist.net`) — automatic fallback when AniList is
+  unreachable (it 403s this network at times). Character search →
+  character page (Animeography + Voice Actors table) → people page
+  (Voice Acting Roles table). Keyless, fully parseable, and MAL is the link
+  target anyway. The JSON output carries `"source": "mal-scrape"` when the
+  fallback was used; roles come in MAL's (recency) order rather than by
+  favourites.
 - **MyAnimeList people search** (`myanimelist.net/people.php`) — resolves each
   VA to a stable `myanimelist.net/people/{id}` link (MAL 303-redirects on exact
   matches; otherwise the first search result is parsed).
@@ -61,5 +69,5 @@ endpoints) or Jikan (unreachable from this network).
    list order = priority, top first) and marks matching roles with
    `"known_anime": true`, sorted by priority first. If the file is missing,
    check memory for the list.
-5. If AniList 429s or MAL resolution fails, fall back to `browser.search` for the
+5. If both AniList and MAL fail, fall back to `browser.search` for the
    answer and say so — do not guess the VA.
