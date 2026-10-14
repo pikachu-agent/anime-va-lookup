@@ -43,3 +43,15 @@ instead of the alternatives.
   Otherwise the first `href="https://myanimelist.net/people/…"` in the
   search-results HTML is used.
 - Reachable with plain curl from this network (fast, no Cloudflare block).
+
+## MAL HTML scraping — automatic fallback when AniList is down
+- Verified 2026-10-14: AniList 403s this network's egress, so the script now
+  falls back to scraping MAL's own pages (all reachable, all parseable):
+  `character.php?q=…&cat=character` → character page (Animeography anime ids
+  for the anime-hint check + Voice Actors table with language labels) →
+  people page "Voice Acting Roles" table (character → anime → anime URL).
+- Output carries `"source": "mal-scrape"`; roles are in MAL's recency order,
+  not favourites order. `character.php` results need no anime-search step
+  (MAL's `anime.php?q=` ignores the query via plain GET, so anime→id
+  resolution still goes through AniList).
+- Rate: 1s between MAL requests; retries on 429/5xx.
