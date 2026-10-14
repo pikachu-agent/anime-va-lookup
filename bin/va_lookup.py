@@ -166,6 +166,144 @@ def mal_people_url(name):
     return None
 
 
+# ---------------------------------------------------------------------------
+# MAL HTML fallback (used when AniList is unreachable: 403/rate-limit).
+# MAL's own pages are reachable with plain curl from this network and are
+# fully parseable: character search -> character page (Animeography +
+# Voice Actors table) -> people page (Voice Acting Roles table).
+# ---------------------------------------------------------------------------
+MAL_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+
+
+def mal_get(url, _retries=2):
+    req = urllib.request.Request(url, headers={"User-Agent": MAL_UA})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.geturl(), resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        if e.code in (429, 500, 502, 503) and _retries > 0:
+            time.sleep(3)
+            return mal_get(url, _retries - 1)
+        raise
+    finally:
+        time.sleep(1.0)  # be gentle with MAL
+
+
+def mal_character_search(name, limit=10):
+    """character.php search -> [(char_id, char_url, name)]."""
+    url = ("https://myanimelist.net/character.php?" +
+           urllib.parse.urlencode({"q": name, "cat": "character"}))
+    _, html = mal_get(url)
+    out, seen = [], set()
+    for m in re.finditer(r'href="(https://myanimelist\.net/character/(\d+)/[^"]+)"', html):
+        if m.group(2) in seen:
+            continue
+        seen.add(m.group(2))
+        t = re.search(re.escape(m.group(1)) + r'"[^>]*>([^<]{1,60})', html)
+        out.append((m.group(2), m.group(1), t.group(1).strip() if t else ""))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def mal_character_detail(char_url):
+    """Character page -> ([(anime_id, anime_title)], [(va_name, va_url, lang)])."""
+    _, html = mal_get(char_url)
+    animes = []
+    asec = html[html.find("Animeography"):html.find("Animeography") + 6000]
+    for m in re.finditer(r'href="(https://myanimelist\.net/anime/(\d+)/[^"]+)"[^>]*>([^<]{1,80})', asec):
+        if m.group(2) not in {a[0] for a in animes}:
+            animes.append((m.group(2), m.group(3).strip()))
+    vas = []
+    vsec = html[html.find("Voice Actors"):html.find("Voice Actors") + 8000]
+    for m in re.finditer(r'href="(https://myanimelist\.net/people/(\d+)/[^"]+)"[^>]*>([^<]+)</a>', vsec):
+        lang = re.search(re.escape(m.group(1)) + r'.*?<small>([^<]+)</small>', vsec, re.S)
+        vas.append((m.group(3).strip(), m.group(1), lang.group(1) if lang else None))
+    return animes, vas
+
+
+def mal_person_roles(people_url, limit=12):
+    """People page 'Voice Acting Roles' table -> roles with MAL anime links."""
+    _, html = mal_get(people_url)
+    idx = html.find("Voice Acting Roles")
+    sec = html[idx:idx + 60000] if idx > 0 else ""
+    roles = []
+    for m in re.finditer(
+            r'href="(https://myanimelist\.net/character/\d+/[^"]+)"[^>]*>([^<]+)</a>'
+            r'.*?href="(https://myanimelist\.net/anime/(\d+)/[^"]+)"[^>]*>([^<]+)</a>',
+            sec, re.S):
+        roles.append({"character": mal_display_name(m.group(2).strip()),
+                      "anime": m.group(5).strip(),
+                      "anime_mal_url": m.group(3)})
+        if len(roles) >= limit * 2:
+            break
+    known = load_known_anime()
+    for r in roles:
+        rank = known_rank([r["anime"]], known)
+        r["known_anime"] = rank is not None
+        r["_rank"] = rank if rank is not None else 0
+    roles.sort(key=lambda r: (not r["known_anime"], r["_rank"]))
+    for r in roles:
+        del r["_rank"]
+    return roles[:limit]
+
+
+def mal_display_name(name):
+    """'Taniyama, Kishou' -> 'Kishou Taniyama' for friendlier output."""
+    m = re.match(r"^([^,]+),\s*(.+)$", name)
+    return f"{m.group(2)} {m.group(1)}" if m else name
+
+
+def cmd_character_mal(args):
+    """MAL-scrape fallback for character mode (no AniList needed)."""
+    cands = mal_character_search(args.name)
+    lowered = args.name.strip().lower()
+    exact = [c for c in cands if c[2].lower() == lowered]
+    pool = exact or cands
+    for _cid, curl_, cname in pool:
+        animes, vas = mal_character_detail(curl_)
+        if args.anime:
+            hint = args.anime.lower()
+            if not any(hint in a[1].lower() for a in animes):
+                continue
+        jvas = [v for v in vas if (v[2] or "").lower() == "japanese"]
+        if not jvas and vas:
+            jvas = vas[:1]
+        if not jvas:
+            continue
+        result = {"character": cname, "character_mal_url": curl_,
+                  "source": "mal-scrape", "voice_actors": []}
+        for vname, vurl, vlang in jvas:
+            result["voice_actors"].append({
+                "name": mal_display_name(vname),
+                "mal_url": vurl,
+                "language": vlang or args.lang,
+                "notable_roles": mal_person_roles(vurl, args.roles),
+            })
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    hint = f" in {args.anime!r}" if args.anime else ""
+    print(json.dumps({"error": f"no character {args.name!r}{hint} found (mal)"}))
+    return 1
+
+
+def cmd_person_mal(args):
+    """MAL-scrape fallback for person mode."""
+    url = mal_people_url(args.name)
+    if not url:
+        print(json.dumps({"error": f"no person found for {args.name!r} (mal)"}))
+        return 1
+    _final, html = mal_get(url)
+    m = re.search(r"<title>\s*([^-<]+?)\s*- MyAnimeList.net", html)
+    result = {"name": (m.group(1).strip() if m else args.name),
+              "mal_url": url,
+              "source": "mal-scrape",
+              "notable_roles": mal_person_roles(url, args.roles)}
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def pick_character(name, candidates, anime_hint=None):
     """Deterministic pick: exact name match first, then anime hint.
 
@@ -361,6 +499,15 @@ def character_via_anime(anime_title, character_name, lang, roles_limit):
 
 
 def cmd_character(args):
+    try:
+        return _cmd_character_anilist(args)
+    except Exception as e:
+        print(f"# AniList unavailable ({type(e).__name__}); falling back to MAL scrape",
+              file=sys.stderr)
+        return cmd_character_mal(args)
+
+
+def _cmd_character_anilist(args):
     lang = LANG_CODES.get(args.lang.lower(), "JAPANESE")
     candidates = search_characters_paged(args.name)
     char = pick_character(args.name, candidates, args.anime)
@@ -424,6 +571,15 @@ def cmd_anime(args):
 
 
 def cmd_person(args):
+    try:
+        return _cmd_person_anilist(args)
+    except Exception as e:
+        print(f"# AniList unavailable ({type(e).__name__}); falling back to MAL scrape",
+              file=sys.stderr)
+        return cmd_person_mal(args)
+
+
+def _cmd_person_anilist(args):
     # Reuse the character search path is wrong here; do a staff search instead.
     data = graphql("""
 query ($q: String) {
